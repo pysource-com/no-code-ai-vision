@@ -4,13 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="01b32564-2e7d-419f-956e-bde8ddd43dd5" name="Changes" comment="Gui basic working in pyside">
+    <list default="true" id="01b32564-2e7d-419f-956e-bde8ddd43dd5" name="Changes" comment="Implemented rf detr">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/app.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/core.py" beforeDir="false" afterPath="$PROJECT_DIR$/core.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/web/app.js" beforeDir="false" afterPath="$PROJECT_DIR$/web/app.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -39,23 +37,23 @@
   </component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.00040783702764" />
-      <entry key="MS500" value="1.362771807930093" />
-      <entry key="S2" value="3.4328217978236175" />
-      <entry key="S5" value="6.5500066315456325" />
-      <entry key="S10" value="9.191887011756982" />
-      <entry key="S30" value="12.05338500838799" />
-      <entry key="S60" value="12.974831109187319" />
-      <entry key="M2" value="13.47366483994201" />
-      <entry key="M5" value="13.786059428401412" />
-      <entry key="M10" value="13.892452847386355" />
-      <entry key="M15" value="13.928173021117175" />
-      <entry key="M30" value="13.964021899955561" />
-      <entry key="H1" value="13.981994764985702" />
-      <entry key="H2" value="13.990993332194694" />
-      <entry key="H4" value="13.995495653016077" />
-      <entry key="D1" value="13.99924913475392" />
-      <entry key="W1" value="13.999892730088808" />
+      <entry key="MS100" value="2.2214242125238455" />
+      <entry key="MS500" value="6.971051569593074" />
+      <entry key="S2" value="21.631629706515934" />
+      <entry key="S5" value="39.03681612893045" />
+      <entry key="S10" value="52.09801021806123" />
+      <entry key="S30" value="66.10396620314964" />
+      <entry key="S60" value="70.73324799608257" />
+      <entry key="M2" value="73.28916518798408" />
+      <entry key="M5" value="75.66584516583545" />
+      <entry key="M10" value="78.7377812911042" />
+      <entry key="M15" value="80.9652025638074" />
+      <entry key="M30" value="84.4581660427165" />
+      <entry key="H1" value="86.9078866278575" />
+      <entry key="H2" value="88.36369141584181" />
+      <entry key="H4" value="89.15790353577384" />
+      <entry key="D1" value="89.8562013370894" />
+      <entry key="W1" value="89.97937119750826" />
     </decayedCancelled>
     <decayedSelected>
       <entry key="MS100" value="0.0" />
@@ -77,23 +75,23 @@
       <entry key="W1" value="0.0" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="0.9269741542976448" />
-      <entry key="MS500" value="1.3437999901761495" />
-      <entry key="S2" value="3.4128741349938103" />
-      <entry key="S5" value="6.52931589245912" />
-      <entry key="S10" value="9.176488042193425" />
-      <entry key="S30" value="12.0465244921653" />
-      <entry key="S60" value="12.971130728710872" />
-      <entry key="M2" value="13.471742213778622" />
-      <entry key="M5" value="13.78527232385536" />
-      <entry key="M10" value="13.892056228479854" />
-      <entry key="M15" value="13.927907922703424" />
-      <entry key="M30" value="13.9638890067536" />
-      <entry key="H1" value="13.98192823218089" />
-      <entry key="H2" value="13.990960044215642" />
-      <entry key="H4" value="13.99547900362917" />
-      <entry key="D1" value="13.999246359106193" />
-      <entry key="W1" value="13.999892333549333" />
+      <entry key="MS100" value="2.066566813449888" />
+      <entry key="MS500" value="6.8758560043655335" />
+      <entry key="S2" value="21.56647172155535" />
+      <entry key="S5" value="38.991974135159" />
+      <entry key="S10" value="52.06852233746317" />
+      <entry key="S30" value="66.09156532103931" />
+      <entry key="S60" value="70.72661576098136" />
+      <entry key="M2" value="73.28572813014195" />
+      <entry key="M5" value="75.66439624514791" />
+      <entry key="M10" value="78.73697966559097" />
+      <entry key="M15" value="80.96462811276243" />
+      <entry key="M30" value="84.45784676064216" />
+      <entry key="H1" value="86.90771562709708" />
+      <entry key="H2" value="88.3636025261408" />
+      <entry key="H4" value="89.15785816471895" />
+      <entry key="D1" value="89.85619363938044" />
+      <entry key="W1" value="89.9793700944102" />
     </decayedShown>
   </component>
   <component name="ProjectColorInfo">{
@@ -418,7 +416,15 @@
       <option name="project" value="LOCAL" />
       <updated>1780649248075</updated>
     </task>
-    <option name="localTasksCounter" value="28" />
+    <task id="LOCAL-00028" summary="Implemented rf detr">
+      <option name="closed" value="true" />
+      <created>1781616171916</created>
+      <option name="number" value="00028" />
+      <option name="presentableId" value="LOCAL-00028" />
+      <option name="project" value="LOCAL" />
+      <updated>1781616171916</updated>
+    </task>
+    <option name="localTasksCounter" value="29" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -452,7 +458,8 @@
     <MESSAGE value="added sam3" />
     <MESSAGE value="Switch to PYSIDE" />
     <MESSAGE value="Gui basic working in pyside" />
-    <option name="LAST_COMMIT_MESSAGE" value="Gui basic working in pyside" />
+    <MESSAGE value="Implemented rf detr" />
+    <option name="LAST_COMMIT_MESSAGE" value="Implemented rf detr" />
   </component>
   <component name="github-copilot-workspace">
     <instructionFileLocations>

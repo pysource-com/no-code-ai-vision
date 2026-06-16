@@ -77,6 +77,7 @@ const NODE_BLUEPRINTS = {
       threshold: 0.55,
       yoloModel: "yolo26n.pt",
       rfdetrModel: "rfdetr-nano",
+      rfdetrCheckpoint: "",
       device: "auto",
       imgsz: 640,
       end2end: true,
@@ -92,6 +93,7 @@ const NODE_BLUEPRINTS = {
       threshold: 0.55,
       yoloModel: "yolo26n-seg.pt",
       rfdetrModel: "rfdetr-seg-nano",
+      rfdetrCheckpoint: "",
       samCheckpoint: "",
       concepts: "person",
       device: "auto",
@@ -595,6 +597,12 @@ function renderInspector() {
       els.nodeForm.appendChild(makeSelectField("rfdetrModel", "RF-DETR model", node.config.rfdetrModel || "rfdetr-nano", RFDETR_DETECTION_MODEL_OPTIONS, (value) => {
         node.config.rfdetrModel = value;
       }));
+      els.nodeForm.appendChild(makeFilePathField("rfdetrCheckpoint", "RF-DETR checkpoint path", node.config.rfdetrCheckpoint || "", (value) => {
+        node.config.rfdetrCheckpoint = value;
+      }, {
+        placeholder: "Optional .pth, .pt, or .ckpt checkpoint",
+        dialogKind: "checkpoint",
+      }));
     } else {
       els.nodeForm.appendChild(makeSelectField("yoloModel", "YOLO26 model", node.config.yoloModel || "yolo26n.pt", DETECTION_MODEL_OPTIONS, (value) => {
         node.config.yoloModel = value;
@@ -636,6 +644,12 @@ function renderInspector() {
     } else if ((node.config.engine || "yolo26") === "rfdetr") {
       els.nodeForm.appendChild(makeSelectField("rfdetrModel", "RF-DETR segmentation model", node.config.rfdetrModel || "rfdetr-seg-nano", RFDETR_SEGMENTATION_MODEL_OPTIONS, (value) => {
         node.config.rfdetrModel = value;
+      }));
+      els.nodeForm.appendChild(makeFilePathField("rfdetrCheckpoint", "RF-DETR checkpoint path", node.config.rfdetrCheckpoint || "", (value) => {
+        node.config.rfdetrCheckpoint = value;
+      }, {
+        placeholder: "Optional .pth, .pt, or .ckpt checkpoint",
+        dialogKind: "checkpoint",
       }));
     } else {
       els.nodeForm.appendChild(makeSelectField("yoloModel", "YOLO26 segmentation model", node.config.yoloModel || "yolo26n-seg.pt", SEGMENTATION_MODEL_OPTIONS, (value) => {
@@ -756,7 +770,7 @@ function makeTextField(name, label, value, onChange) {
   return wrapper;
 }
 
-function makeFilePathField(name, label, value, onChange) {
+function makeFilePathField(name, label, value, onChange, options = {}) {
   const wrapper = makeLabel(label);
   const row = document.createElement("div");
   row.className = "file-picker-row";
@@ -764,7 +778,7 @@ function makeFilePathField(name, label, value, onChange) {
   input.type = "text";
   input.name = name;
   input.value = String(value ?? "");
-  input.placeholder = "Select an image or video file";
+  input.placeholder = options.placeholder || "Select an image or video file";
   input.addEventListener("input", () => onChange(input.value));
 
   const button = document.createElement("button");
@@ -775,7 +789,7 @@ function makeFilePathField(name, label, value, onChange) {
   button.addEventListener("click", async () => {
     button.disabled = true;
     try {
-      const payload = await postJson("/api/file-dialog/open", {});
+      const payload = await postJson("/api/file-dialog/open", { kind: options.dialogKind || "vision" });
       if (!payload.path) return;
       input.value = payload.path;
       onChange(payload.path);

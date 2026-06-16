@@ -176,7 +176,12 @@ class WorkflowRunner:
                         self._emit_log(f"SAM 3 concept prompt(s): {concepts}")
                         engine.load_sam3_processor(config, device)
                     elif eng == "rfdetr":
-                        engine.load_rfdetr_model(model_name, device)
+                        rfdetr_model_name = config.get("rfdetrModel") or engine.default_rfdetr_model(inference_node.get("id", "detector"))
+                        engine.load_rfdetr_model(
+                            rfdetr_model_name,
+                            device,
+                            engine.rfdetr_checkpoint_path(config),
+                        )
                     else:
                         engine.load_yolo_model(model_name, device)
                     loaded_models.append(model_name)

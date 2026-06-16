@@ -95,6 +95,7 @@ preview window showing the live detections. In the editor, each node turns green
 > **First run note:** the first time you use Object Detection, it automatically downloads the
 > YOLO26 model weights (for example `yolo26n.pt`). This happens once and may take a moment.
 > RF-DETR also downloads its selected starter weights the first time you run an RF-DETR model.
+> To use fine-tuned RF-DETR weights, choose **RF-DETR** and set the optional checkpoint path.
 > SAM 3 uses Meta's official implementation. Request access to `facebook/sam3` on Hugging Face,
 > run `hf auth login`, then choose **SAM 3 concept segmentation**. You can also set a local
 > checkpoint path in Object Segmentation.

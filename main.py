@@ -174,24 +174,30 @@ def open_external_terminal() -> str:
     raise RuntimeError("No supported external terminal application was found.")
 
 
-def open_file_dialog() -> str | None:
+def open_file_dialog(kind: str = "vision") -> str | None:
+    checkpoint_mode = kind == "checkpoint"
     if os.name == "nt":
         powershell = shutil.which("powershell.exe") or shutil.which("powershell")
         if not powershell:
             raise RuntimeError("PowerShell is required to open the Windows file picker.")
 
-        filter_spec = (
-            "Vision files (*.bmp;*.dib;*.jpg;*.jpeg;*.jpe;*.jp2;*.png;*.webp;*.pbm;*.pgm;*.ppm;*.pxm;*.pnm;*.tif;*.tiff;*.mp4;*.avi;*.mov;*.mkv;*.webm;*.m4v;*.wmv)"
-            "|*.bmp;*.dib;*.jpg;*.jpeg;*.jpe;*.jp2;*.png;*.webp;*.pbm;*.pgm;*.ppm;*.pxm;*.pnm;*.tif;*.tiff;*.mp4;*.avi;*.mov;*.mkv;*.webm;*.m4v;*.wmv"
-            "|Image files (*.bmp;*.jpg;*.jpeg;*.png;*.webp;*.tif;*.tiff)|*.bmp;*.jpg;*.jpeg;*.png;*.webp;*.tif;*.tiff"
-            "|Video files (*.mp4;*.avi;*.mov;*.mkv;*.webm;*.m4v;*.wmv)|*.mp4;*.avi;*.mov;*.mkv;*.webm;*.m4v;*.wmv"
-            "|All files (*.*)|*.*"
-        )
+        if checkpoint_mode:
+            title = "Select RF-DETR checkpoint"
+            filter_spec = "RF-DETR checkpoints (*.pth;*.pt;*.ckpt)|*.pth;*.pt;*.ckpt|All files (*.*)|*.*"
+        else:
+            title = "Select input file"
+            filter_spec = (
+                "Vision files (*.bmp;*.dib;*.jpg;*.jpeg;*.jpe;*.jp2;*.png;*.webp;*.pbm;*.pgm;*.ppm;*.pxm;*.pnm;*.tif;*.tiff;*.mp4;*.avi;*.mov;*.mkv;*.webm;*.m4v;*.wmv)"
+                "|*.bmp;*.dib;*.jpg;*.jpeg;*.jpe;*.jp2;*.png;*.webp;*.pbm;*.pgm;*.ppm;*.pxm;*.pnm;*.tif;*.tiff;*.mp4;*.avi;*.mov;*.mkv;*.webm;*.m4v;*.wmv"
+                "|Image files (*.bmp;*.jpg;*.jpeg;*.png;*.webp;*.tif;*.tiff)|*.bmp;*.jpg;*.jpeg;*.png;*.webp;*.tif;*.tiff"
+                "|Video files (*.mp4;*.avi;*.mov;*.mkv;*.webm;*.m4v;*.wmv)|*.mp4;*.avi;*.mov;*.mkv;*.webm;*.m4v;*.wmv"
+                "|All files (*.*)|*.*"
+            )
         script = f"""
 Add-Type -AssemblyName System.Windows.Forms
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $dialog = New-Object System.Windows.Forms.OpenFileDialog
-$dialog.Title = 'Select input file'
+$dialog.Title = '{title}'
 $dialog.Filter = @'
 {filter_spec}
 '@
@@ -225,14 +231,23 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {{
     root.attributes("-topmost", True)
     root.update()
     try:
-        path = filedialog.askopenfilename(
-            title="Select input file",
-            filetypes=[
+        if checkpoint_mode:
+            title = "Select RF-DETR checkpoint"
+            filetypes = [
+                ("RF-DETR checkpoints", "*.pth *.pt *.ckpt"),
+                ("All files", "*.*"),
+            ]
+        else:
+            title = "Select input file"
+            filetypes = [
                 ("Vision files", "*.bmp *.dib *.jpg *.jpeg *.jpe *.jp2 *.png *.webp *.pbm *.pgm *.ppm *.pxm *.pnm *.tif *.tiff *.mp4 *.avi *.mov *.mkv *.webm *.m4v *.wmv"),
                 ("Image files", "*.bmp *.dib *.jpg *.jpeg *.jpe *.jp2 *.png *.webp *.pbm *.pgm *.ppm *.pxm *.pnm *.tif *.tiff"),
                 ("Video files", "*.mp4 *.avi *.mov *.mkv *.webm *.m4v *.wmv"),
                 ("All files", "*.*"),
-            ],
+            ]
+        path = filedialog.askopenfilename(
+            title=title,
+            filetypes=filetypes,
         )
         return str(Path(path).resolve()) if path else None
     finally:
@@ -366,15 +381,27 @@ def inference_model_name(inference_node: dict) -> str:
     if engine == "sam3":
         return str(sam3_checkpoint_path(config) or "facebook/sam3")
     if engine == "rfdetr":
-        return config.get("rfdetrModel") or default_rfdetr_model(inference_node.get("id", "detector"))
+        model_name = config.get("rfdetrModel") or default_rfdetr_model(inference_node.get("id", "detector"))
+        checkpoint_path = rfdetr_checkpoint_path(config)
+        return f"{model_name} ({checkpoint_path})" if checkpoint_path else model_name
     return config.get("yoloModel") or "yolo26n.pt"
 
 
-def load_rfdetr_model(model_name: str, device: str = "cpu"):
+def rfdetr_checkpoint_path(config: dict) -> Path | None:
+    raw_value = str(config.get("rfdetrCheckpoint") or "").strip().strip('"')
+    if not raw_value:
+        return None
+    checkpoint_path = resolve_model_file(raw_value)
+    if not checkpoint_path.exists() or not checkpoint_path.is_file():
+        raise RuntimeError(f"RF-DETR checkpoint was not found at {checkpoint_path}.")
+    return checkpoint_path
+
+
+def load_rfdetr_model(model_name: str, device: str = "cpu", checkpoint_path: Path | None = None):
     if model_name not in RFDETR_MODEL_SET:
         raise ValueError(f"Unsupported RF-DETR model '{model_name}'.")
 
-    cache_key = ("rfdetr", model_name, device)
+    cache_key = ("rfdetr", model_name, str(checkpoint_path or ""), device)
     with _model_lock:
         if cache_key in _model_cache:
             return _model_cache[cache_key]
@@ -391,10 +418,14 @@ def load_rfdetr_model(model_name: str, device: str = "cpu"):
             raise RuntimeError(
                 f"The installed RF-DETR package does not provide {class_name}. Update with '.\\.venv\\Scripts\\python.exe -m pip install -r requirements.txt'."
             )
+        model_kwargs = {"device": device}
+        if checkpoint_path is not None:
+            model_kwargs["pretrain_weights"] = str(checkpoint_path)
         try:
-            model = model_class(device=device)
+            model = model_class(**model_kwargs)
         except TypeError:
-            model = model_class()
+            model_kwargs.pop("device", None)
+            model = model_class(**model_kwargs)
         _model_cache[cache_key] = model
         return model
 
@@ -490,11 +521,13 @@ def normalize_workflow(workflow: dict) -> dict:
             if config.get("engine") not in ("yolo26", "rfdetr"):
                 config["engine"] = "yolo26"
             config.setdefault("rfdetrModel", "rfdetr-nano")
+            config.setdefault("rfdetrCheckpoint", "")
         if node.get("type") == "segmenter":
             config = node.setdefault("config", {})
             if config.get("engine") not in ("yolo26", "sam3", "rfdetr"):
                 config["engine"] = "yolo26"
             config.setdefault("rfdetrModel", "rfdetr-seg-nano")
+            config.setdefault("rfdetrCheckpoint", "")
         if node.get("type") == "classifier":
             config = node.setdefault("config", {})
             config["engine"] = "yolo26"
@@ -796,7 +829,7 @@ def run_rfdetr_frame(frame, inference_node: dict) -> list[dict]:
 
     threshold = float(config.get("threshold", 0.55))
     device, _ = resolve_inference_device(config)
-    model = load_rfdetr_model(model_name, device)
+    model = load_rfdetr_model(model_name, device, rfdetr_checkpoint_path(config))
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     results = model.predict(rgb_frame, threshold=threshold)
     if isinstance(results, list):
@@ -1075,7 +1108,8 @@ class WorkflowRunner:
                         self._add_terminal(f"SAM 3 concept prompt(s): {concepts}")
                         load_sam3_processor(config, device)
                     elif engine == "rfdetr":
-                        load_rfdetr_model(model_name, device)
+                        rfdetr_model_name = config.get("rfdetrModel") or default_rfdetr_model(inference_node.get("id", "detector"))
+                        load_rfdetr_model(rfdetr_model_name, device, rfdetr_checkpoint_path(config))
                     else:
                         load_yolo_model(model_name, device)
                     loaded_models.append(model_name)
@@ -1270,9 +1304,12 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
                 json_response(self, 200, {"message": message, "cwd": str(ROOT)})
                 return
             if path == "/api/file-dialog/open":
-                selected_path = open_file_dialog()
+                payload = read_json_body(self)
+                kind = str(payload.get("kind") or "vision")
+                selected_path = open_file_dialog(kind)
                 if selected_path:
-                    terminal_log(f"Selected input file {selected_path}")
+                    label = "RF-DETR checkpoint" if kind == "checkpoint" else "input file"
+                    terminal_log(f"Selected {label} {selected_path}")
                 json_response(self, 200, {"path": selected_path})
                 return
             json_response(self, 404, {"error": "Not found"})

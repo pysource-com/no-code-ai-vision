@@ -136,14 +136,14 @@ NODE_BLUEPRINTS = {
         "subtitle": "YOLO26 or RF-DETR",
         "x": 330,
         "y": 60,
-        "config": {"engine": "yolo26", "threshold": 0.55, "yoloModel": "yolo26n.pt", "rfdetrModel": "rfdetr-nano", "device": "auto", "imgsz": 640, "end2end": True},
+        "config": {"engine": "yolo26", "threshold": 0.55, "yoloModel": "yolo26n.pt", "rfdetrModel": "rfdetr-nano", "rfdetrCheckpoint": "", "device": "auto", "imgsz": 640, "end2end": True},
     },
     "segmenter": {
         "title": "Object Segmentation",
         "subtitle": "YOLO26, RF-DETR, or SAM 3 masks",
         "x": 620,
         "y": 60,
-        "config": {"engine": "yolo26", "threshold": 0.55, "yoloModel": "yolo26n-seg.pt", "rfdetrModel": "rfdetr-seg-nano", "samCheckpoint": "", "concepts": "person", "device": "auto", "imgsz": 640, "end2end": True},
+        "config": {"engine": "yolo26", "threshold": 0.55, "yoloModel": "yolo26n-seg.pt", "rfdetrModel": "rfdetr-seg-nano", "rfdetrCheckpoint": "", "samCheckpoint": "", "concepts": "person", "device": "auto", "imgsz": 640, "end2end": True},
     },
     "classifier": {
         "title": "Object Classification",
@@ -992,6 +992,13 @@ class Inspector(QScrollArea):
             self._add(self._field("Confidence", self._fslider(cfg.get("threshold", 0.55), 0.1, 0.95, 0.05, lambda v: self._set(node, "threshold", v))))
             if detector_engine == "rfdetr":
                 self._add(self._field("RF-DETR model", self._combo(RFDETR_DETECTION_MODEL_OPTIONS, cfg.get("rfdetrModel", "rfdetr-nano"), lambda v: self._set(node, "rfdetrModel", v))))
+                self._add(self._field("RF-DETR checkpoint path", self._file_row(
+                    cfg.get("rfdetrCheckpoint", ""),
+                    lambda v: self._set(node, "rfdetrCheckpoint", v),
+                    title="Select RF-DETR checkpoint",
+                    placeholder="Optional .pth, .pt, or .ckpt checkpoint",
+                    file_filter="RF-DETR checkpoints (*.pth *.pt *.ckpt);;All files (*.*)",
+                )))
             else:
                 self._add(self._field("YOLO26 model", self._combo(DETECTION_MODEL_OPTIONS, cfg.get("yoloModel", "yolo26n.pt"), lambda v: self._set(node, "yoloModel", v))))
             self._add(self._field("Device", self._combo(self.get_devices(), cfg.get("device", "auto"), lambda v: self._set(node, "device", v))))
@@ -1008,6 +1015,13 @@ class Inspector(QScrollArea):
                 self._add(self._field("Concept prompts", self._textarea(cfg.get("concepts", "person"), lambda v: self._set(node, "concepts", v))))
             elif segmenter_engine == "rfdetr":
                 self._add(self._field("RF-DETR segmentation model", self._combo(RFDETR_SEGMENTATION_MODEL_OPTIONS, cfg.get("rfdetrModel", "rfdetr-seg-nano"), lambda v: self._set(node, "rfdetrModel", v))))
+                self._add(self._field("RF-DETR checkpoint path", self._file_row(
+                    cfg.get("rfdetrCheckpoint", ""),
+                    lambda v: self._set(node, "rfdetrCheckpoint", v),
+                    title="Select RF-DETR checkpoint",
+                    placeholder="Optional .pth, .pt, or .ckpt checkpoint",
+                    file_filter="RF-DETR checkpoints (*.pth *.pt *.ckpt);;All files (*.*)",
+                )))
             else:
                 self._add(self._field("YOLO26 segmentation model", self._combo(SEGMENTATION_MODEL_OPTIONS, cfg.get("yoloModel", "yolo26n-seg.pt"), lambda v: self._set(node, "yoloModel", v))))
             self._add(self._field("Device", self._combo(self.get_devices(), cfg.get("device", "auto"), lambda v: self._set(node, "device", v))))
@@ -1119,21 +1133,27 @@ class Inspector(QScrollArea):
         area.textChanged.connect(lambda: on_change(area.toPlainText()))
         return area
 
-    def _file_row(self, value: str, on_change) -> QWidget:
+    def _file_row(
+        self,
+        value: str,
+        on_change,
+        title: str = "Select input file",
+        placeholder: str = "Select an image or video file",
+        file_filter: str = "Vision files (*.bmp *.jpg *.jpeg *.png *.webp *.tif *.tiff *.mp4 *.avi *.mov *.mkv *.webm *.m4v *.wmv);;All files (*.*)",
+    ) -> QWidget:
         wrap = QWidget()
         lay = QHBoxLayout(wrap)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
         line = QLineEdit(str(value))
-        line.setPlaceholderText("Select an image or video file")
+        line.setPlaceholderText(placeholder)
         line.textChanged.connect(on_change)
         button = QPushButton("📁")
         button.setFixedWidth(40)
 
         def browse():
             path, _ = QFileDialog.getOpenFileName(
-                self, "Select input file", str(ROOT),
-                "Vision files (*.bmp *.jpg *.jpeg *.png *.webp *.tif *.tiff *.mp4 *.avi *.mov *.mkv *.webm *.m4v *.wmv);;All files (*.*)",
+                self, title, str(ROOT), file_filter,
             )
             if path:
                 line.setText(path)
