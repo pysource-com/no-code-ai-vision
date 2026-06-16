@@ -26,6 +26,8 @@ INPUT_NODE_ID = engine.INPUT_NODE_ID
 YOLO26_DETECTION_MODELS = engine.YOLO26_DETECTION_MODELS
 YOLO26_SEGMENTATION_MODELS = engine.YOLO26_SEGMENTATION_MODELS
 YOLO26_CLASSIFICATION_MODELS = engine.YOLO26_CLASSIFICATION_MODELS
+RFDETR_DETECTION_MODELS = engine.RFDETR_DETECTION_MODELS
+RFDETR_SEGMENTATION_MODELS = engine.RFDETR_SEGMENTATION_MODELS
 SAM3_MODELS = engine.SAM3_MODELS
 
 git_version_info = engine.git_version_info
@@ -147,7 +149,7 @@ class WorkflowRunner:
                 for inference_node in inference_nodes:
                     config = inference_node.get("config", {})
                     eng = config.get("engine", "yolo26")
-                    if eng not in ("yolo26", "sam3"):
+                    if eng not in ("yolo26", "sam3", "rfdetr"):
                         raise RuntimeError(
                             f"Backend runtime does not support inference engine '{eng}'."
                         )
@@ -155,25 +157,26 @@ class WorkflowRunner:
                         raise RuntimeError(
                             "SAM 3 is available only on the Object Segmentation node."
                         )
-                    checkpoint_path = (
-                        engine.sam3_checkpoint_path(config) if eng == "sam3" else None
-                    )
-                    model_name = (
-                        str(checkpoint_path or "facebook/sam3")
-                        if eng == "sam3"
-                        else config.get("yoloModel") or "yolo26n.pt"
-                    )
+                    if eng == "rfdetr" and inference_node.get("id") not in ("detector", "segmenter"):
+                        raise RuntimeError(
+                            "RF-DETR is available only on Object Detection and Object Segmentation nodes."
+                        )
+                    model_name = engine.inference_model_name(inference_node)
                     device, device_label = engine.resolve_inference_device(config)
                     task_labels = {"classifier": "classification", "segmenter": "segmentation"}
                     task_label = task_labels.get(inference_node.get("id"), "detector")
                     if eng == "sam3":
                         task_label = f"SAM 3 {task_label}"
+                    elif eng == "rfdetr":
+                        task_label = f"RF-DETR {task_label}"
                     self._emit_log(f"Loading {task_label} model {model_name}")
                     self._emit_log(f"Using inference device {device_label}")
                     if eng == "sam3":
                         concepts = ", ".join(engine.sam3_concepts(config))
                         self._emit_log(f"SAM 3 concept prompt(s): {concepts}")
                         engine.load_sam3_processor(config, device)
+                    elif eng == "rfdetr":
+                        engine.load_rfdetr_model(model_name, device)
                     else:
                         engine.load_yolo_model(model_name, device)
                     loaded_models.append(model_name)
@@ -212,6 +215,8 @@ class WorkflowRunner:
                         eng = config.get("engine", "yolo26")
                         if eng == "sam3":
                             node_detections = engine.run_sam3_frame(frame, inference_node)
+                        elif eng == "rfdetr":
+                            node_detections = engine.run_rfdetr_frame(frame, inference_node)
                         elif eng == "yolo26":
                             node_detections = engine.run_yolo26_frame(frame, inference_node)
                         else:

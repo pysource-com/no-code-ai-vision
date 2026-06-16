@@ -103,6 +103,18 @@ SEGMENTATION_MODEL_OPTIONS = [
     ("yolo26l-seg.pt", "YOLO26 large segmentation"),
     ("yolo26x-seg.pt", "YOLO26 extra large segmentation"),
 ]
+RFDETR_DETECTION_MODEL_OPTIONS = [
+    ("rfdetr-nano", "RF-DETR nano"),
+    ("rfdetr-small", "RF-DETR small"),
+    ("rfdetr-medium", "RF-DETR medium"),
+    ("rfdetr-large", "RF-DETR large"),
+]
+RFDETR_SEGMENTATION_MODEL_OPTIONS = [
+    ("rfdetr-seg-nano", "RF-DETR-Seg nano"),
+    ("rfdetr-seg-small", "RF-DETR-Seg small"),
+    ("rfdetr-seg-medium", "RF-DETR-Seg medium"),
+    ("rfdetr-seg-large", "RF-DETR-Seg large"),
+]
 CLASSIFICATION_MODEL_OPTIONS = [
     ("yolo26n-cls.pt", "YOLO26 nano classification"),
     ("yolo26s-cls.pt", "YOLO26 small classification"),
@@ -121,17 +133,17 @@ NODE_BLUEPRINTS = {
     },
     "detector": {
         "title": "Object Detection",
-        "subtitle": "Ultralytics YOLO26",
+        "subtitle": "YOLO26 or RF-DETR",
         "x": 330,
         "y": 60,
-        "config": {"engine": "yolo26", "threshold": 0.55, "yoloModel": "yolo26n.pt", "device": "auto", "imgsz": 640, "end2end": True},
+        "config": {"engine": "yolo26", "threshold": 0.55, "yoloModel": "yolo26n.pt", "rfdetrModel": "rfdetr-nano", "device": "auto", "imgsz": 640, "end2end": True},
     },
     "segmenter": {
         "title": "Object Segmentation",
-        "subtitle": "YOLO26 or SAM 3 masks",
+        "subtitle": "YOLO26, RF-DETR, or SAM 3 masks",
         "x": 620,
         "y": 60,
-        "config": {"engine": "yolo26", "threshold": 0.55, "yoloModel": "yolo26n-seg.pt", "samCheckpoint": "", "concepts": "person", "device": "auto", "imgsz": 640, "end2end": True},
+        "config": {"engine": "yolo26", "threshold": 0.55, "yoloModel": "yolo26n-seg.pt", "rfdetrModel": "rfdetr-seg-nano", "samCheckpoint": "", "concepts": "person", "device": "auto", "imgsz": 640, "end2end": True},
     },
     "classifier": {
         "title": "Object Classification",
@@ -975,23 +987,33 @@ class Inspector(QScrollArea):
                 self._add(self._field("Height", self._spin(cfg.get("height", 720), 240, 2160, lambda v: self._set(node, "height", v))))
 
         elif t == "detector":
+            detector_engine = cfg.get("engine", "yolo26")
+            self._add(self._field("Engine", self._combo([("yolo26", "YOLO26 object detection"), ("rfdetr", "RF-DETR object detection")], detector_engine, lambda v: self._set_engine(node, v))))
             self._add(self._field("Confidence", self._fslider(cfg.get("threshold", 0.55), 0.1, 0.95, 0.05, lambda v: self._set(node, "threshold", v))))
-            self._add(self._field("YOLO26 model", self._combo(DETECTION_MODEL_OPTIONS, cfg.get("yoloModel", "yolo26n.pt"), lambda v: self._set(node, "yoloModel", v))))
+            if detector_engine == "rfdetr":
+                self._add(self._field("RF-DETR model", self._combo(RFDETR_DETECTION_MODEL_OPTIONS, cfg.get("rfdetrModel", "rfdetr-nano"), lambda v: self._set(node, "rfdetrModel", v))))
+            else:
+                self._add(self._field("YOLO26 model", self._combo(DETECTION_MODEL_OPTIONS, cfg.get("yoloModel", "yolo26n.pt"), lambda v: self._set(node, "yoloModel", v))))
             self._add(self._field("Device", self._combo(self.get_devices(), cfg.get("device", "auto"), lambda v: self._set(node, "device", v))))
-            self._add(self._field("Image size", self._spin(cfg.get("imgsz", 640), 320, 1280, lambda v: self._set(node, "imgsz", v))))
-            self._add(self._field("End-to-end head", self._checkbox(cfg.get("end2end", True), lambda v: self._set(node, "end2end", v))))
+            if detector_engine == "yolo26":
+                self._add(self._field("Image size", self._spin(cfg.get("imgsz", 640), 320, 1280, lambda v: self._set(node, "imgsz", v))))
+                self._add(self._field("End-to-end head", self._checkbox(cfg.get("end2end", True), lambda v: self._set(node, "end2end", v))))
 
         elif t == "segmenter":
-            self._add(self._field("Engine", self._combo([("yolo26", "YOLO26 instance segmentation"), ("sam3", "SAM 3 concept segmentation")], cfg.get("engine", "yolo26"), lambda v: self._set_engine(node, v))))
+            segmenter_engine = cfg.get("engine", "yolo26")
+            self._add(self._field("Engine", self._combo([("yolo26", "YOLO26 instance segmentation"), ("rfdetr", "RF-DETR instance segmentation"), ("sam3", "SAM 3 concept segmentation")], segmenter_engine, lambda v: self._set_engine(node, v))))
             self._add(self._field("Confidence", self._fslider(cfg.get("threshold", 0.55), 0.1, 0.95, 0.05, lambda v: self._set(node, "threshold", v))))
-            if (cfg.get("engine") or "yolo26") == "sam3":
+            if segmenter_engine == "sam3":
                 self._add(self._field("SAM 3 checkpoint path", self._line(cfg.get("samCheckpoint", ""), lambda v: self._set(node, "samCheckpoint", v))))
                 self._add(self._field("Concept prompts", self._textarea(cfg.get("concepts", "person"), lambda v: self._set(node, "concepts", v))))
+            elif segmenter_engine == "rfdetr":
+                self._add(self._field("RF-DETR segmentation model", self._combo(RFDETR_SEGMENTATION_MODEL_OPTIONS, cfg.get("rfdetrModel", "rfdetr-seg-nano"), lambda v: self._set(node, "rfdetrModel", v))))
             else:
                 self._add(self._field("YOLO26 segmentation model", self._combo(SEGMENTATION_MODEL_OPTIONS, cfg.get("yoloModel", "yolo26n-seg.pt"), lambda v: self._set(node, "yoloModel", v))))
             self._add(self._field("Device", self._combo(self.get_devices(), cfg.get("device", "auto"), lambda v: self._set(node, "device", v))))
-            self._add(self._field("Image size", self._spin(cfg.get("imgsz", 640), 320, 1280, lambda v: self._set(node, "imgsz", v))))
-            if (cfg.get("engine") or "yolo26") == "yolo26":
+            if segmenter_engine != "rfdetr":
+                self._add(self._field("Image size", self._spin(cfg.get("imgsz", 640), 320, 1280, lambda v: self._set(node, "imgsz", v))))
+            if segmenter_engine == "yolo26":
                 self._add(self._field("End-to-end head", self._checkbox(cfg.get("end2end", True), lambda v: self._set(node, "end2end", v))))
 
         elif t == "classifier":
@@ -1051,6 +1073,9 @@ class Inspector(QScrollArea):
 
     def _set_engine(self, node: dict, value: str) -> None:
         node["config"]["engine"] = value
+        if value == "rfdetr":
+            default_model = "rfdetr-seg-nano" if node["type"] == "segmenter" else "rfdetr-nano"
+            node["config"].setdefault("rfdetrModel", default_model)
         self.editor.persist()
         self.show_node(node["id"])
 

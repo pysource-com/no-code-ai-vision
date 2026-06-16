@@ -20,6 +20,19 @@ YOLO26_SEGMENTATION_MODELS = ("yolo26n-seg.pt", "yolo26s-seg.pt", "yolo26m-seg.p
 YOLO26_CLASSIFICATION_MODELS = ("yolo26n-cls.pt", "yolo26s-cls.pt", "yolo26m-cls.pt", "yolo26l-cls.pt", "yolo26x-cls.pt")
 YOLO26_MODELS = (*YOLO26_DETECTION_MODELS, *YOLO26_SEGMENTATION_MODELS, *YOLO26_CLASSIFICATION_MODELS)
 YOLO26_MODEL_SET = set(YOLO26_MODELS)
+RFDETR_DETECTION_MODELS = ("rfdetr-nano", "rfdetr-small", "rfdetr-medium", "rfdetr-large")
+RFDETR_SEGMENTATION_MODELS = ("rfdetr-seg-nano", "rfdetr-seg-small", "rfdetr-seg-medium", "rfdetr-seg-large")
+RFDETR_MODEL_CLASSES = {
+    "rfdetr-nano": "RFDETRNano",
+    "rfdetr-small": "RFDETRSmall",
+    "rfdetr-medium": "RFDETRMedium",
+    "rfdetr-large": "RFDETRLarge",
+    "rfdetr-seg-nano": "RFDETRSegNano",
+    "rfdetr-seg-small": "RFDETRSegSmall",
+    "rfdetr-seg-medium": "RFDETRSegMedium",
+    "rfdetr-seg-large": "RFDETRSegLarge",
+}
+RFDETR_MODEL_SET = set(RFDETR_MODEL_CLASSES)
 SAM3_MODELS = ("facebook/sam3",)
 INPUT_NODE_ID = "input"
 LEGACY_CAMERA_NODE_ID = "camera"
@@ -343,6 +356,49 @@ def load_yolo_model(model_name: str, device: str = "cpu"):
         return model
 
 
+def default_rfdetr_model(source_node_id: str) -> str:
+    return "rfdetr-seg-nano" if source_node_id == "segmenter" else "rfdetr-nano"
+
+
+def inference_model_name(inference_node: dict) -> str:
+    config = inference_node.get("config", {})
+    engine = config.get("engine", "yolo26")
+    if engine == "sam3":
+        return str(sam3_checkpoint_path(config) or "facebook/sam3")
+    if engine == "rfdetr":
+        return config.get("rfdetrModel") or default_rfdetr_model(inference_node.get("id", "detector"))
+    return config.get("yoloModel") or "yolo26n.pt"
+
+
+def load_rfdetr_model(model_name: str, device: str = "cpu"):
+    if model_name not in RFDETR_MODEL_SET:
+        raise ValueError(f"Unsupported RF-DETR model '{model_name}'.")
+
+    cache_key = ("rfdetr", model_name, device)
+    with _model_lock:
+        if cache_key in _model_cache:
+            return _model_cache[cache_key]
+        try:
+            import rfdetr
+        except ImportError as exc:
+            raise RuntimeError(
+                "RF-DETR is not installed. Run '.\\.venv\\Scripts\\python.exe -m pip install -r requirements.txt'."
+            ) from exc
+
+        class_name = RFDETR_MODEL_CLASSES[model_name]
+        model_class = getattr(rfdetr, class_name, None)
+        if model_class is None:
+            raise RuntimeError(
+                f"The installed RF-DETR package does not provide {class_name}. Update with '.\\.venv\\Scripts\\python.exe -m pip install -r requirements.txt'."
+            )
+        try:
+            model = model_class(device=device)
+        except TypeError:
+            model = model_class()
+        _model_cache[cache_key] = model
+        return model
+
+
 def resolve_model_file(value: str, default_name: str = "") -> Path:
     model_path = Path(str(value or default_name).strip().strip('"') or default_name).expanduser()
     if not model_path.is_absolute():
@@ -429,6 +485,19 @@ def normalize_workflow(workflow: dict) -> dict:
             config.setdefault("sourceType", "camera")
             if "source" not in config:
                 config["source"] = config.get("cameraIndex", config.get("deviceId", 0))
+        if node.get("type") == "detector":
+            config = node.setdefault("config", {})
+            if config.get("engine") not in ("yolo26", "rfdetr"):
+                config["engine"] = "yolo26"
+            config.setdefault("rfdetrModel", "rfdetr-nano")
+        if node.get("type") == "segmenter":
+            config = node.setdefault("config", {})
+            if config.get("engine") not in ("yolo26", "sam3", "rfdetr"):
+                config["engine"] = "yolo26"
+            config.setdefault("rfdetrModel", "rfdetr-seg-nano")
+        if node.get("type") == "classifier":
+            config = node.setdefault("config", {})
+            config["engine"] = "yolo26"
 
     for edge in workflow.get("edges", []):
         if len(edge) < 2:
@@ -698,6 +767,80 @@ def run_yolo26_frame(frame, inference_node: dict) -> list[dict]:
     return detections
 
 
+def _rfdetr_class_name(model, detections, index: int, class_id) -> str:
+    data = getattr(detections, "data", {}) or {}
+    for key in ("class_name", "class_names", "label", "labels"):
+        labels = data.get(key)
+        if labels is not None and index < len(labels):
+            return str(labels[index])
+
+    class_names = getattr(model, "class_names", {}) or {}
+    try:
+        class_key = int(class_id)
+    except (TypeError, ValueError):
+        return "object"
+    return str(class_names.get(class_key, str(class_key)))
+
+
+def run_rfdetr_frame(frame, inference_node: dict) -> list[dict]:
+    import cv2
+    import numpy as np
+
+    config = inference_node.get("config", {})
+    source_node_id = inference_node.get("id", "detector")
+    model_name = config.get("rfdetrModel") or default_rfdetr_model(source_node_id)
+    if source_node_id == "segmenter" and model_name not in RFDETR_SEGMENTATION_MODELS:
+        raise RuntimeError(f"RF-DETR model '{model_name}' is not an instance segmentation model.")
+    if source_node_id == "detector" and model_name not in RFDETR_DETECTION_MODELS:
+        raise RuntimeError(f"RF-DETR model '{model_name}' is not an object detection model.")
+
+    threshold = float(config.get("threshold", 0.55))
+    device, _ = resolve_inference_device(config)
+    model = load_rfdetr_model(model_name, device)
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = model.predict(rgb_frame, threshold=threshold)
+    if isinstance(results, list):
+        results = results[0] if results else None
+    if results is None:
+        return []
+
+    xyxy = getattr(results, "xyxy", None)
+    if xyxy is None:
+        return []
+    boxes = np.asarray(xyxy).tolist()
+    confidences = getattr(results, "confidence", None)
+    scores = np.asarray(confidences).tolist() if confidences is not None else [1.0] * len(boxes)
+    class_ids_raw = getattr(results, "class_id", None)
+    class_ids = np.asarray(class_ids_raw).tolist() if class_ids_raw is not None else [None] * len(boxes)
+    masks = getattr(results, "mask", None)
+
+    detections = []
+    for index, box in enumerate(boxes):
+        if len(box) < 4:
+            continue
+        x1, y1, x2, y2 = [float(value) for value in box[:4]]
+        class_id = class_ids[index] if index < len(class_ids) else None
+        score = scores[index] if index < len(scores) else 1.0
+        detection = {
+            "class": _rfdetr_class_name(model, results, index, class_id),
+            "score": float(score),
+            "bbox": [x1, y1, x2 - x1, y2 - y1],
+            "sourceNodeId": source_node_id,
+            "kind": "segmentation" if source_node_id == "segmenter" else "detection",
+        }
+        if masks is not None and index < len(masks):
+            mask = np.squeeze(np.asarray(masks[index]))
+            if mask.ndim == 2:
+                mask = (mask > 0).astype(np.uint8) * 255
+                contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                if contours:
+                    contour = max(contours, key=cv2.contourArea).reshape(-1, 2)
+                    if len(contour) >= 3:
+                        detection["mask"] = [[float(point[0]), float(point[1])] for point in contour]
+        detections.append(detection)
+    return detections
+
+
 def run_sam3_frame(frame, inference_node: dict) -> list[dict]:
     from contextlib import nullcontext
 
@@ -907,17 +1050,14 @@ class WorkflowRunner:
                 device_labels = []
                 for inference_node in inference_nodes:
                     engine = inference_node.get("config", {}).get("engine", "yolo26")
-                    if engine not in ("yolo26", "sam3"):
+                    if engine not in ("yolo26", "sam3", "rfdetr"):
                         raise RuntimeError(f"Backend runtime does not support inference engine '{engine}'.")
                     if engine == "sam3" and inference_node.get("id") != "segmenter":
                         raise RuntimeError("SAM 3 is available only on the Object Segmentation node.")
+                    if engine == "rfdetr" and inference_node.get("id") not in ("detector", "segmenter"):
+                        raise RuntimeError("RF-DETR is available only on Object Detection and Object Segmentation nodes.")
                     config = inference_node.get("config", {})
-                    checkpoint_path = sam3_checkpoint_path(config) if engine == "sam3" else None
-                    model_name = (
-                        str(checkpoint_path or "facebook/sam3")
-                        if engine == "sam3"
-                        else config.get("yoloModel") or "yolo26n.pt"
-                    )
+                    model_name = inference_model_name(inference_node)
                     device, device_label = resolve_inference_device(inference_node.get("config", {}))
                     task_labels = {
                         "classifier": "classification",
@@ -926,12 +1066,16 @@ class WorkflowRunner:
                     task_label = task_labels.get(inference_node.get("id"), "detector")
                     if engine == "sam3":
                         task_label = f"SAM 3 {task_label}"
+                    elif engine == "rfdetr":
+                        task_label = f"RF-DETR {task_label}"
                     self._add_terminal(f"Loading {task_label} model {model_name}")
                     self._add_terminal(f"Using inference device {device_label}")
                     if engine == "sam3":
                         concepts = ", ".join(sam3_concepts(config))
                         self._add_terminal(f"SAM 3 concept prompt(s): {concepts}")
                         load_sam3_processor(config, device)
+                    elif engine == "rfdetr":
+                        load_rfdetr_model(model_name, device)
                     else:
                         load_yolo_model(model_name, device)
                     loaded_models.append(model_name)
@@ -962,6 +1106,8 @@ class WorkflowRunner:
                         engine = config.get("engine", "yolo26")
                         if engine == "sam3":
                             node_detections = run_sam3_frame(frame, inference_node)
+                        elif engine == "rfdetr":
+                            node_detections = run_rfdetr_frame(frame, inference_node)
                         elif engine == "yolo26":
                             node_detections = run_yolo26_frame(frame, inference_node)
                         else:
@@ -1084,6 +1230,8 @@ class NoCacheHandler(SimpleHTTPRequestHandler):
                 "detectionModels": list(YOLO26_DETECTION_MODELS),
                 "segmentationModels": list(YOLO26_SEGMENTATION_MODELS),
                 "classificationModels": list(YOLO26_CLASSIFICATION_MODELS),
+                "rfdetrDetectionModels": list(RFDETR_DETECTION_MODELS),
+                "rfdetrSegmentationModels": list(RFDETR_SEGMENTATION_MODELS),
                 "samModels": list(SAM3_MODELS),
             })
             return

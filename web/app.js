@@ -30,6 +30,20 @@ const SEGMENTATION_MODEL_OPTIONS = [
   ["yolo26x-seg.pt", "YOLO26 extra large segmentation"],
 ];
 
+const RFDETR_DETECTION_MODEL_OPTIONS = [
+  ["rfdetr-nano", "RF-DETR nano"],
+  ["rfdetr-small", "RF-DETR small"],
+  ["rfdetr-medium", "RF-DETR medium"],
+  ["rfdetr-large", "RF-DETR large"],
+];
+
+const RFDETR_SEGMENTATION_MODEL_OPTIONS = [
+  ["rfdetr-seg-nano", "RF-DETR-Seg nano"],
+  ["rfdetr-seg-small", "RF-DETR-Seg small"],
+  ["rfdetr-seg-medium", "RF-DETR-Seg medium"],
+  ["rfdetr-seg-large", "RF-DETR-Seg large"],
+];
+
 const CLASSIFICATION_MODEL_OPTIONS = [
   ["yolo26n-cls.pt", "YOLO26 nano classification"],
   ["yolo26s-cls.pt", "YOLO26 small classification"],
@@ -55,13 +69,14 @@ const NODE_BLUEPRINTS = {
   },
   detector: {
     title: "Object Detection",
-    subtitle: "Backend Ultralytics YOLO26",
+    subtitle: "YOLO26 or RF-DETR",
     x: 332,
     y: 72,
     config: {
       engine: "yolo26",
       threshold: 0.55,
       yoloModel: "yolo26n.pt",
+      rfdetrModel: "rfdetr-nano",
       device: "auto",
       imgsz: 640,
       end2end: true,
@@ -69,13 +84,14 @@ const NODE_BLUEPRINTS = {
   },
   segmenter: {
     title: "Object Segmentation",
-    subtitle: "YOLO26 or SAM 3 masks",
+    subtitle: "YOLO26, RF-DETR, or SAM 3 masks",
     x: 620,
     y: 72,
     config: {
       engine: "yolo26",
       threshold: 0.55,
       yoloModel: "yolo26n-seg.pt",
+      rfdetrModel: "rfdetr-seg-nano",
       samCheckpoint: "",
       concepts: "person",
       device: "auto",
@@ -231,10 +247,13 @@ function normalizeWorkflow(workflow) {
     if (node.type !== "input") {
       node.subtitle = blueprint.subtitle;
     }
-    if (["detector", "classifier"].includes(node.type)) {
+    if (node.type === "detector" && !["yolo26", "rfdetr"].includes(node.config.engine)) {
       node.config.engine = "yolo26";
     }
-    if (node.type === "segmenter" && !["yolo26", "sam3"].includes(node.config.engine)) {
+    if (node.type === "classifier") {
+      node.config.engine = "yolo26";
+    }
+    if (node.type === "segmenter" && !["yolo26", "sam3", "rfdetr"].includes(node.config.engine)) {
       node.config.engine = "yolo26";
     }
     if (node.type === "segmenter" && node.config.samModel && !node.config.samCheckpoint) {
@@ -561,30 +580,47 @@ function renderInspector() {
   }
 
   if (node.type === "detector") {
-    node.config.engine = "yolo26";
+    els.nodeForm.appendChild(makeSelectField("engine", "Engine", node.config.engine || "yolo26", [
+      ["yolo26", "YOLO26 object detection"],
+      ["rfdetr", "RF-DETR object detection"],
+    ], (value) => {
+      node.config.engine = value;
+      if (value === "rfdetr" && !node.config.rfdetrModel) node.config.rfdetrModel = "rfdetr-nano";
+      renderInspector();
+    }));
     els.nodeForm.appendChild(makeRangeField("threshold", "Confidence", node.config.threshold, 0.1, 0.95, 0.05, (value) => {
       node.config.threshold = value;
     }));
-    els.nodeForm.appendChild(makeSelectField("yoloModel", "YOLO26 model", node.config.yoloModel || "yolo26n.pt", DETECTION_MODEL_OPTIONS, (value) => {
-      node.config.yoloModel = value;
-    }));
+    if ((node.config.engine || "yolo26") === "rfdetr") {
+      els.nodeForm.appendChild(makeSelectField("rfdetrModel", "RF-DETR model", node.config.rfdetrModel || "rfdetr-nano", RFDETR_DETECTION_MODEL_OPTIONS, (value) => {
+        node.config.rfdetrModel = value;
+      }));
+    } else {
+      els.nodeForm.appendChild(makeSelectField("yoloModel", "YOLO26 model", node.config.yoloModel || "yolo26n.pt", DETECTION_MODEL_OPTIONS, (value) => {
+        node.config.yoloModel = value;
+      }));
+    }
     els.nodeForm.appendChild(makeSelectField("device", "Device", node.config.device || "auto", runtimeDeviceOptions(), (value) => {
       node.config.device = value;
     }));
-    els.nodeForm.appendChild(makeNumberField("imgsz", "Image size", node.config.imgsz || 640, 320, 1280, (value) => {
-      node.config.imgsz = value;
-    }));
-    els.nodeForm.appendChild(makeToggleField("end2end", "End-to-end head", node.config.end2end ?? true, (checked) => {
-      node.config.end2end = checked;
-    }));
+    if ((node.config.engine || "yolo26") === "yolo26") {
+      els.nodeForm.appendChild(makeNumberField("imgsz", "Image size", node.config.imgsz || 640, 320, 1280, (value) => {
+        node.config.imgsz = value;
+      }));
+      els.nodeForm.appendChild(makeToggleField("end2end", "End-to-end head", node.config.end2end ?? true, (checked) => {
+        node.config.end2end = checked;
+      }));
+    }
   }
 
   if (node.type === "segmenter") {
     els.nodeForm.appendChild(makeSelectField("engine", "Engine", node.config.engine || "yolo26", [
       ["yolo26", "YOLO26 instance segmentation"],
+      ["rfdetr", "RF-DETR instance segmentation"],
       ["sam3", "SAM 3 concept segmentation"],
     ], (value) => {
       node.config.engine = value;
+      if (value === "rfdetr" && !node.config.rfdetrModel) node.config.rfdetrModel = "rfdetr-seg-nano";
       renderInspector();
     }));
     els.nodeForm.appendChild(makeRangeField("threshold", "Confidence", node.config.threshold, 0.1, 0.95, 0.05, (value) => {
@@ -597,6 +633,10 @@ function renderInspector() {
       els.nodeForm.appendChild(makeTextAreaField("concepts", "Concept prompts", node.config.concepts || "person", (value) => {
         node.config.concepts = value;
       }));
+    } else if ((node.config.engine || "yolo26") === "rfdetr") {
+      els.nodeForm.appendChild(makeSelectField("rfdetrModel", "RF-DETR segmentation model", node.config.rfdetrModel || "rfdetr-seg-nano", RFDETR_SEGMENTATION_MODEL_OPTIONS, (value) => {
+        node.config.rfdetrModel = value;
+      }));
     } else {
       els.nodeForm.appendChild(makeSelectField("yoloModel", "YOLO26 segmentation model", node.config.yoloModel || "yolo26n-seg.pt", SEGMENTATION_MODEL_OPTIONS, (value) => {
         node.config.yoloModel = value;
@@ -605,9 +645,11 @@ function renderInspector() {
     els.nodeForm.appendChild(makeSelectField("device", "Device", node.config.device || "auto", runtimeDeviceOptions(), (value) => {
       node.config.device = value;
     }));
-    els.nodeForm.appendChild(makeNumberField("imgsz", "Image size", node.config.imgsz || 640, 320, 1280, (value) => {
-      node.config.imgsz = value;
-    }));
+    if ((node.config.engine || "yolo26") !== "rfdetr") {
+      els.nodeForm.appendChild(makeNumberField("imgsz", "Image size", node.config.imgsz || 640, 320, 1280, (value) => {
+        node.config.imgsz = value;
+      }));
+    }
     if ((node.config.engine || "yolo26") === "yolo26") {
       els.nodeForm.appendChild(makeToggleField("end2end", "End-to-end head", node.config.end2end ?? true, (checked) => {
         node.config.end2end = checked;
